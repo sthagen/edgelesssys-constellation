@@ -11,20 +11,28 @@ csps := aws qemu gcp azure
 certs := $(PKI)/PK.cer $(PKI)/KEK.cer $(PKI)/db.cer
 
 GCP_FIXED_KERNEL_RPMS := kernel-5.19.17-300.fc37.x86_64.rpm kernel-core-5.19.17-300.fc37.x86_64.rpm kernel-modules-5.19.17-300.fc37.x86_64.rpm
-PREBUILT_RPMS := $(addprefix prebuilt/rpms/,$(GCP_FIXED_KERNEL_RPMS))
+AZURE_DEBUG_KERNEL_RPMS := kernel-5.18.16-200.fc36.x86_64.rpm kernel-core-5.18.16-200.fc36.x86_64.rpm kernel-modules-5.18.16-200.fc36.x86_64.rpm
+PREBUILT_RPMS_GCP := $(addprefix prebuilt/gcp/rpms/,$(GCP_FIXED_KERNEL_RPMS))
+PREBUILT_RPMS_AZURE := $(addprefix prebuilt/azure/rpms/,$(AZURE_DEBUG_KERNEL_RPMS))
+
 
 .PHONY: all clean inject-bins $(csps)
 
 all: $(csps)
 
-$(csps): %: mkosi.output.%/fedora~37/image.raw
+$(csps): %: mkosi.output.%/fedora~36/image.raw
 
-prebuilt/rpms/%.rpm:
+prebuilt/azure/rpms/%.rpm:
+	@echo "Downloading $*"
+	@mkdir -p $(@D)
+	@curl -sL -o $@ https://kojipkgs.fedoraproject.org/packages/kernel/5.18.16/200.fc36/x86_64/$*.rpm
+
+prebuilt/gcp/rpms/%.rpm:
 	@echo "Downloading $*"
 	@mkdir -p $(@D)
 	@curl -sL -o $@ https://kojipkgs.fedoraproject.org/packages/kernel/5.19.17/300.fc37/x86_64/$*.rpm
 
-mkosi.output.%/fedora~37/image.raw: mkosi.files/mkosi.%.conf inject-bins inject-certs
+mkosi.output.%/fedora~36/image.raw: mkosi.files/mkosi.%.conf inject-bins inject-certs
 	mkosi --config mkosi.files/mkosi.$*.conf --image-version=$(IMAGE_VERSION) build
 	secure-boot/signed-shim.sh $@
 	@if [ -n $(SUDO_UID) ] && [ -n $(SUDO_GID) ]; then \
@@ -32,7 +40,7 @@ mkosi.output.%/fedora~37/image.raw: mkosi.files/mkosi.%.conf inject-bins inject-
 	fi
 	@echo "Image is ready: $@"
 
-inject-bins: $(PREBUILT_RPMS)
+inject-bins: $(PREBUILT_RPMS_GCP) $(PREBUILT_RPMS_AZURE)
 	mkdir -p $(MKOSI_EXTRA)/usr/bin
 	mkdir -p $(MKOSI_EXTRA)/usr/sbin
 	cp $(BOOTSTRAPPER_BINARY) $(MKOSI_EXTRA)/usr/bin/bootstrapper
