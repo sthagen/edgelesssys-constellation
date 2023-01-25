@@ -91,6 +91,23 @@ func (c *Client) Upgrade(ctx context.Context, config *config.Config, timeout tim
 	return nil
 }
 
+// Versions queries the cluster for running versions and returns a map of releaseName -> version.
+func (c *Client) Versions() (map[string]string, error) {
+	serviceVersion, err := c.currentVersion(conServicesReleaseName)
+	if err != nil {
+		return nil, fmt.Errorf("getting con-services version: %w", err)
+	}
+	operatorVersion, err := c.currentVersion(conOperatorsReleaseName)
+	if err != nil {
+		return nil, fmt.Errorf("getting operator version: %w", err)
+	}
+
+	return map[string]string{
+		conServicesReleaseName:  serviceVersion,
+		conOperatorsReleaseName: operatorVersion,
+	}, nil
+}
+
 // currentVersion returns the version of the currently installed helm release.
 func (c *Client) currentVersion(release string) (string, error) {
 	rel, err := c.actions.listAction(release)

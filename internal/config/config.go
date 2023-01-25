@@ -58,13 +58,16 @@ type Config struct {
 	Version string `yaml:"version" validate:"eq=v2"`
 	// description: |
 	//   Machine image used to create Constellation nodes.
-	Image string `yaml:"image" validate:"required"`
+	Image string `yaml:"image" validate:"required,version_compatibility"`
 	// description: |
 	//   Size (in GB) of a node's disk to store the non-volatile state.
 	StateDiskSizeGB int `yaml:"stateDiskSizeGB" validate:"min=0"`
 	// description: |
-	//   Kubernetes version to be installed in the cluster.
+	//   Kubernetes version to be installed into the cluster.
 	KubernetesVersion string `yaml:"kubernetesVersion" validate:"supported_k8s_version"`
+	// description: |
+	//	 Microservice version to be installed into the cluster.
+	MicroserviceVersion string `yaml:"microserviceVersion" validate:"version_compatibility"`
 	// description: |
 	//   DON'T USE IN PRODUCTION: enable debug mode and use debug images. For usage, see: https://github.com/edgelesssys/constellation/blob/main/debugd/README.md
 	DebugCluster *bool `yaml:"debugCluster" validate:"required"`
@@ -489,12 +492,20 @@ func (c *Config) Validate() error {
 		return err
 	}
 
+	if err := validate.RegisterTranslation("version_compatibility", trans, registerVersionCompatibilityError, translateVersionCompatibilityError); err != nil {
+		return err
+	}
+
 	if err := validate.RegisterValidation("no_placeholders", validateNoPlaceholder); err != nil {
 		return err
 	}
 
 	// register custom validator with label supported_k8s_version to validate version based on available versionConfigs.
 	if err := validate.RegisterValidation("supported_k8s_version", validateK8sVersion); err != nil {
+		return err
+	}
+
+	if err := validate.RegisterValidation("version_compatibility", validateVersionCompatibility); err != nil {
 		return err
 	}
 

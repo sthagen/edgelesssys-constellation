@@ -90,6 +90,22 @@ func NewLoader(csp cloudprovider.Provider, k8sVersion versions.ValidK8sVersion) 
 	}
 }
 
+func AvailableServiceVersions() (map[string]string, error) {
+	servicesChart, err := loadChartsDir(helmFS, conServicesPath)
+	if err != nil {
+		return nil, fmt.Errorf("loading constellation-services chart: %w", err)
+	}
+	operatorsChart, err := loadChartsDir(helmFS, conOperatorsPath)
+	if err != nil {
+		return nil, fmt.Errorf("loading constellation-operators chart: %w", err)
+	}
+
+	return map[string]string{
+		conServicesReleaseName:  servicesChart.Metadata.Version,
+		conOperatorsReleaseName: operatorsChart.Metadata.Version,
+	}, nil
+}
+
 // Load the embedded helm charts.
 func (i *ChartLoader) Load(config *config.Config, conformanceMode bool, masterSecret, salt []byte) ([]byte, error) {
 	ciliumRelease, err := i.loadCilium(config.GetProvider(), conformanceMode)

@@ -14,7 +14,9 @@ import (
 	"github.com/edgelesssys/constellation/v2/internal/attestation/measurements"
 	"github.com/edgelesssys/constellation/v2/internal/cloud/cloudprovider"
 	"github.com/edgelesssys/constellation/v2/internal/config/instancetypes"
+	"github.com/edgelesssys/constellation/v2/internal/constants"
 	"github.com/edgelesssys/constellation/v2/internal/versions"
+	"github.com/edgelesssys/constellation/v2/internal/versionsapi"
 	ut "github.com/go-playground/universal-translator"
 	"github.com/go-playground/validator/v10"
 )
@@ -243,4 +245,49 @@ func getPlaceholderEntries(m Measurements) []uint32 {
 	}
 
 	return placeholders
+}
+
+func registerVersionCompatibilityError(ut ut.Translator) error {
+	return ut.Add("version_compatibility", "{0} specifies an invalid version: {1}", true)
+}
+
+func translateVersionCompatibilityError(ut ut.Translator, fe validator.FieldError) string {
+	err := validateVersionCompatibilityHelper(fe.Field(), fe.Value().(string))
+	var msg string
+
+	switch err {
+	case versions.ErrSemVer:
+		msg = fmt.Sprintf("configured version (%s) does not adhere to SemVer syntax", fe.Value().(string))
+	case versions.ErrMajorMismatch:
+		msg = fmt.Sprintf("the CLI's major version (%s) has to match your configured major version (%s)", constants.VersionInfo, fe.Value().(string))
+	case versions.ErrMinorDrift:
+		msg = fmt.Sprintf("the CLI's minor version (%s) and your configured minor version (%s) can not be more than one step apart", constants.VersionInfo, fe.Value().(string))
+	default:
+		msg = err.Error()
+	}
+
+	t, _ := ut.T("version_compatibility", fe.Field(), msg)
+
+	return t
+}
+
+// Check that the validated field and the CLI version are not more than one minor version apart.
+func validateVersionCompatibility(fl validator.FieldLevel) bool {
+	if err := validateVersionCompatibilityHelper(fl.FieldName(), fl.Field().String()); err != nil {
+		return false
+	}
+
+	return true
+}
+
+func validateVersionCompatibilityHelper(fieldName string, configuredVersion string) error {
+	if fieldName == "Image" {
+		imageVersion, err := versionsapi.NewVersionFromShortPath(configuredVersion, versionsapi.VersionKindImage)
+		if err != nil {
+			return err
+		}
+		configuredVersion = imageVersion.Version
+	}
+
+	return versions.CompatibleVersions(constants.VersionInfo, configuredVersion)
 }

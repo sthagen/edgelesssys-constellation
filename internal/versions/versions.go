@@ -13,11 +13,27 @@ package versions
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/edgelesssys/constellation/v2/internal/constants"
 	"github.com/edgelesssys/constellation/v2/internal/versions/components"
+	"golang.org/x/mod/semver"
 )
+
+// SupportedK8sVersions returns a list (sorted) of supported Kubernetes versions.
+func SupportedK8sVersions() []string {
+	validVersions := make([]string, len(VersionConfigs))
+	i := 0
+	for _, conf := range VersionConfigs {
+		validVersions[i] = conf.ClusterVersion
+		i++
+	}
+	validVersionsSorted := semver.ByVersion(validVersions)
+	sort.Sort(validVersionsSorted)
+
+	return validVersionsSorted
+}
 
 // ValidK8sVersion represents any of the three currently supported k8s versions.
 type ValidK8sVersion string
