@@ -1,10 +1,18 @@
-package semver
+/*
+Copyright (c) Edgeless Systems GmbH
+
+SPDX-License-Identifier: AGPL-3.0-only
+*/
+
+/*
+Package compatibility offers helper functions for comparing and filtering versions.
+*/
+package compatibility
 
 import (
 	"errors"
 	"fmt"
 
-	"github.com/hashicorp/go-version"
 	"golang.org/x/mod/semver"
 )
 
@@ -12,50 +20,49 @@ var (
 	// ErrMajorMismatch signals that the major version of two compared versions don't match.
 	ErrMajorMismatch = errors.New("missmatching major version")
 	// ErrMinorDrift signals that the minor version of two compared versions are further apart than one.
-	ErrMinorDrift = errors.New("minor versions more than 1 apart")
+	ErrMinorDrift = errors.New("target version needs to be equal or up to one minor version higher")
 	// ErrSemVer signals that a given version does not adhere to the Semver syntax.
 	ErrSemVer = errors.New("invalid semver")
 )
-
-// CompatibleVersions tests that version b is greater than a, but not further away than one minor version.
-func CompatibleVersions(a, b string) error {
-	versionA, err := version.NewSemver(a)
-	if err != nil {
-		return ErrSemVer
-	}
-	versionB, err := version.NewSemver(b)
-	if err != nil {
-		return ErrSemVer
-	}
-
-	// Major versions always have to match.
-	if versionA.Segments()[0] != versionB.Segments()[0] {
-		return ErrMajorMismatch
-	}
-	// If user only specified major version, we can stop comparing now.
-	if len(versionA.Segments()) == 1 {
-		return nil
-	}
-
-	if versionA.GreaterThan(versionB) {
-		return ErrMinorDrift
-	}
-	// Abort if minor version drift between CLI and versionA value is greater than 1.
-	if versionA.Segments()[1]-versionB.Segments()[1] < -1 {
-		return ErrMinorDrift
-	}
-
-	return nil
-}
 
 // IsValidUpgrade checks that a and b adhere to a version drift of 1 and b is greater than a.
 func IsValidUpgrade(a, b string) (bool, error) {
 	err := CompatibleVersions(a, b)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("testing version compatibility (%s, %s): %w", a, b, err)
 	}
 
 	return semver.Compare(a, b) == -1, nil
+}
+
+// CompatibleVersions tests that version b is greater than a, but not further away than one minor version.
+func CompatibleVersions(a, b string) error {
+	if !semver.IsValid(a) || !semver.IsValid(b) {
+		return ErrSemVer
+	}
+	aMajor, aMinor, _, err := parseCanonicalSemver(a)
+	if err != nil {
+		return err
+	}
+	bMajor, bMinor, _, err := parseCanonicalSemver(b)
+	if err != nil {
+		return err
+	}
+
+	// Major versions always have to match.
+	if aMajor != bMajor {
+		return ErrMajorMismatch
+	}
+
+	if semver.Compare(a, b) == 1 {
+		return ErrMinorDrift
+	}
+	// Abort if minor version drift between CLI and versionA value is greater than 1.
+	if aMinor-bMinor < -1 {
+		return ErrMinorDrift
+	}
+
+	return nil
 }
 
 // FilterNewerVersion filters the list of versions to only include versions newer than currentVersion.

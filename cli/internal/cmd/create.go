@@ -75,7 +75,7 @@ func (c *createCmd) create(cmd *cobra.Command, creator cloudCreator, fileHandler
 	c.log.Debugf("Loading configuration file from %q", flags.configPath)
 	conf, err := config.New(fileHandler, flags.configPath)
 	if err != nil {
-		return displayConfigValidationErrors(cmd.ErrOrStderr(), err)
+		return config.DisplayValidationErrors(cmd.ErrOrStderr(), err)
 	}
 
 	c.log.Debugf("Checking configuration for warnings")

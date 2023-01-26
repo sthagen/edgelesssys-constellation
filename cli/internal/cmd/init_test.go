@@ -400,7 +400,7 @@ func TestAttestation(t *testing.T) {
 	require.NoError(fileHandler.WriteJSON(constants.ClusterIDsFileName, existingIDFile, file.OptNone))
 
 	cfg := config.Default()
-	cfg.Image = "image"
+	cfg.Image = constants.VersionInfo
 	cfg.RemoveProviderExcept(cloudprovider.QEMU)
 	cfg.Provider.QEMU.Measurements[0] = measurements.WithAllBytes(0x00, false)
 	cfg.Provider.QEMU.Measurements[1] = measurements.WithAllBytes(0x11, false)
@@ -476,7 +476,7 @@ func (s *stubInitServer) Init(ctx context.Context, req *initproto.InitRequest) (
 func defaultConfigWithExpectedMeasurements(t *testing.T, conf *config.Config, csp cloudprovider.Provider) *config.Config {
 	t.Helper()
 
-	conf.Image = "image"
+	conf.Image = constants.VersionInfo
 
 	switch csp {
 	case cloudprovider.Azure:

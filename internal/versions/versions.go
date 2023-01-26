@@ -103,13 +103,13 @@ const (
 
 	// currently supported versions.
 	//nolint:revive
-	V1_23 ValidK8sVersion = "1.23"
+	V1_23 ValidK8sVersion = "v1.23.16"
 	//nolint:revive
-	V1_24 ValidK8sVersion = "1.24"
+	V1_24 ValidK8sVersion = "v1.24.9"
 	//nolint:revive
-	V1_25 ValidK8sVersion = "1.25"
+	V1_25 ValidK8sVersion = "v1.25.6"
 	//nolint:revive
-	V1_26 ValidK8sVersion = "1.26"
+	V1_26 ValidK8sVersion = "v1.26.1"
 
 	// Default k8s version deployed by Constellation.
 	Default ValidK8sVersion = V1_25

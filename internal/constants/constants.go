@@ -173,4 +173,4 @@ const (
 )
 
 // VersionInfo is the version of a binary. Left as a separate variable to allow override during build.
-var VersionInfo = "0.0.0"
+var VersionInfo = "v0.0.0"

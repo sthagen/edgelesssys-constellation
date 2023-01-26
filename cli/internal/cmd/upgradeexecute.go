@@ -71,7 +71,7 @@ func upgradeExecute(cmd *cobra.Command, imageFetcher imageFetcher, upgrader clou
 	}
 	conf, err := config.New(fileHandler, flags.configPath)
 	if err != nil {
-		return displayConfigValidationErrors(cmd.ErrOrStderr(), err)
+		return config.DisplayValidationErrors(cmd.ErrOrStderr(), err)
 	}
 
 	if flags.helmFlag {

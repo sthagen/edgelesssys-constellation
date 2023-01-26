@@ -13,17 +13,18 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/edgelesssys/constellation/v2/cli/internal/cloudcmd"
 	"github.com/edgelesssys/constellation/v2/cli/internal/helm"
 	"github.com/edgelesssys/constellation/v2/internal/attestation/measurements"
 	"github.com/edgelesssys/constellation/v2/internal/cloud/cloudprovider"
+	"github.com/edgelesssys/constellation/v2/internal/compatibility"
 	"github.com/edgelesssys/constellation/v2/internal/config"
 	"github.com/edgelesssys/constellation/v2/internal/constants"
 	"github.com/edgelesssys/constellation/v2/internal/file"
 	"github.com/edgelesssys/constellation/v2/internal/kubernetes/kubectl"
-	consemver "github.com/edgelesssys/constellation/v2/internal/semver"
 	"github.com/edgelesssys/constellation/v2/internal/sigstore"
 	"github.com/edgelesssys/constellation/v2/internal/versions"
 	"github.com/edgelesssys/constellation/v2/internal/versionsapi"
@@ -71,9 +72,20 @@ func runUpgradeCheck(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("constructing Rekor client: %w", err)
 	}
 	cliVersion := getCurrentCLIVersion()
-	up := &upgradeCheckCmd{log: log}
+	up := &upgradeCheckCmd{
+		collect: &versionCollector{
+			checker:        checker,
+			verListFetcher: versionListFetcher,
+			fileHandler:    fileHandler,
+			client:         http.DefaultClient,
+			rekor:          rekor,
+			flags:          flags,
+			cliVersion:     cliVersion,
+		},
+		log: log,
+	}
 
-	return up.upgradeCheck(cmd, checker, versionListFetcher, fileHandler, http.DefaultClient, rekor, flags, cliVersion)
+	return up.upgradeCheck(cmd, fileHandler, flags, cliVersion)
 }
 
 func parseUpgradeCheckFlags(cmd *cobra.Command) (upgradeCheckFlags, error) {
@@ -94,29 +106,38 @@ func parseUpgradeCheckFlags(cmd *cobra.Command) (upgradeCheckFlags, error) {
 }
 
 type upgradeCheckCmd struct {
-	log debugLog
+	collect collector
+	log     debugLog
 }
 
 // upgradePlan plans an upgrade of a Constellation cluster.
-func (up *upgradeCheckCmd) upgradeCheck(cmd *cobra.Command, checker upgradeChecker, verListFetcher versionListFetcher,
-	fileHandler file.Handler, client *http.Client, rekor rekorVerifier, flags upgradeCheckFlags,
-	cliVersion string,
-) error {
+func (up *upgradeCheckCmd) upgradeCheck(cmd *cobra.Command, fileHandler file.Handler, flags upgradeCheckFlags, cliVersion string) error {
 	conf, err := config.New(fileHandler, flags.configPath)
 	if err != nil {
-		return displayConfigValidationErrors(cmd.ErrOrStderr(), err)
+		return config.DisplayValidationErrors(cmd.ErrOrStderr(), err)
 	}
 	up.log.Debugf("Read configuration from %q", flags.configPath)
 	// get current image version of the cluster
 	csp := conf.GetProvider()
 	up.log.Debugf("Using provider %s", csp.String())
 
-	currentServicesVersions, currentImageVersion, currentK8sVersion, err := up.collectCurrentVersions(cmd.Context(), checker)
+	currentServicesVersions, currentImageVersion, currentK8sVersion, err := up.collect.currentVersions(cmd.Context(), up.log)
 	if err != nil {
 		return err
 	}
 
-	supportedServicesVersions, supportedImageVersions, supportedK8sVersions, err := up.collectSupportedVersions(cmd, currentImageVersion, verListFetcher, fileHandler, client, rekor, flags, csp, cliVersion)
+	supportedServicesVersions, supportedImageVersions, supportedK8sVersions, err := up.collect.supportedVersions(cmd, currentImageVersion, csp, up.log)
+	if err != nil {
+		return err
+	}
+
+	// TODO: Filter CLI versions for ones that are compatible with current K8s version. Needs versionsapi extension.
+	next, err := compatibility.NextMinorVersion(cliVersion)
+	if err != nil {
+		return fmt.Errorf("calculating nextMinorVersion: %w", err)
+	}
+	allowedVersions := []string{semver.MajorMinor(cliVersion), next}
+	newCLIVersions, err := up.collect.newerVersions(cmd.Context(), cliVersion, allowedVersions, up.log)
 	if err != nil {
 		return err
 	}
@@ -128,43 +149,141 @@ func (up *upgradeCheckCmd) upgradeCheck(cmd *cobra.Command, checker upgradeCheck
 		currentServicesVersions:   currentServicesVersions,
 		currentImageVersion:       currentImageVersion,
 		currentK8sVersion:         currentK8sVersion,
+		newCLIVersions:            newCLIVersions,
 	}
 
 	updateMsg, err := upgrade.buildString()
 	if err != nil {
 		return err
 	}
-
-	// Get new CLI versions
-	// TODO: Filter CLI versions for ones that are compatible with current K8s version. Needs versionsapi extension.
-	next, err := consemver.NextMinorVersion(cliVersion)
-	if err != nil {
-		return fmt.Errorf("calculating nextMinorVersion: %w", err)
-	}
-	allowedVersions := []string{semver.MajorMinor(cliVersion), next}
-	newCLIVersions, err := up.getNewerVersions(cmd.Context(), verListFetcher, cliVersion, allowedVersions)
-	if err != nil {
-		return err
-	}
-
-	// Print section
-	if len(updateMsg) > 0 {
-		fmt.Println("The following updates are available with this CLI:")
-		fmt.Print(updateMsg)
-		return nil
-	}
-	if len(newCLIVersions) > 0 {
-		fmt.Printf("More versions are available with these CLI versions: %s\n", newCLIVersions)
-		fmt.Println("Download at: https://github.com/edgelesssys/constellation/releases")
-		return nil
-	}
+	fmt.Print(updateMsg)
 
 	fmt.Println("No further updates available.")
 
 	return nil
 }
 
-func (up *upgradeCheckCmd) getNewerVersions(ctx context.Context, verListFetcher versionListFetcher, currentVersion string, allowedVersions []string) ([]string, error) {
+type collector interface {
+	currentVersions(ctx context.Context, log debugLog) (serviceVersions map[string]string, imageVersion string, k8sVersion string, err error)
+	supportedVersions(cmd *cobra.Command, version string, csp cloudprovider.Provider, log debugLog) (serviceVersions map[string]string, imageVersions []string, k8sVersions []string, err error)
+	newImages(cmd *cobra.Command, version string, csp cloudprovider.Provider, log debugLog) ([]string, error)
+	newerVersions(ctx context.Context, currentVersion string, allowedVersions []string, log debugLog) ([]string, error)
+}
+
+type versionCollector struct {
+	checker        upgradeChecker
+	verListFetcher versionListFetcher
+	fileHandler    file.Handler
+	client         *http.Client
+	rekor          rekorVerifier
+	flags          upgradeCheckFlags
+	cliVersion     string
+}
+
+func (v *versionCollector) currentVersions(ctx context.Context, log debugLog) (serviceVersions map[string]string, imageVersion string, k8sVersion string, err error) {
+	helmClient, err := helm.NewClient(kubectl.New(), constants.AdminConfFilename, constants.HelmNamespace, log)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("setting up helm client: %w", err)
+	}
+
+	serviceVersions, err = helmClient.Versions()
+	if err != nil {
+		return nil, "", "", fmt.Errorf("getting service versions: %w", err)
+	}
+
+	imageVersion, err = getCurrentImageVersion(ctx, v.checker)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("getting image version: %w", err)
+	}
+
+	k8sVersion, err = getCurrentKubernetesVersion(ctx, v.checker)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("getting image version: %w", err)
+	}
+
+	return serviceVersions, imageVersion, k8sVersion, nil
+}
+
+func (v *versionCollector) supportedVersions(cmd *cobra.Command, version string, csp cloudprovider.Provider, log debugLog) (serviceVersions map[string]string, imageVersions []string, k8sVersions []string, err error) {
+	k8sVersions = versions.SupportedK8sVersions()
+	serviceVersions, err = helm.AvailableServiceVersions()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("loading service versions: %w", err)
+	}
+	imageVersions, err = v.newImages(cmd, version, csp, log)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("loading image versions: %w", err)
+	}
+
+	return serviceVersions, imageVersions, k8sVersions, nil
+}
+
+func (v *versionCollector) newImages(cmd *cobra.Command, version string, csp cloudprovider.Provider, log debugLog) ([]string, error) {
+	// find compatible images
+	// image updates should always be possible for the current minor version of the cluster
+	// (e.g. 0.1.0 -> 0.1.1, 0.1.2, 0.1.3, etc.)
+	// additionally, we allow updates to the next minor version (e.g. 0.1.0 -> 0.2.0)
+	// if the CLI minor version is newer than the cluster minor version
+	currentImageMinorVer := semver.MajorMinor(version)
+	currentCLIMinorVer := semver.MajorMinor(v.cliVersion)
+	nextImageMinorVer, err := compatibility.NextMinorVersion(currentImageMinorVer)
+	if err != nil {
+		return nil, fmt.Errorf("calculating next image minor version: %w", err)
+	}
+	log.Debugf("Current image minor version is %s", currentImageMinorVer)
+	log.Debugf("Current CLI minor version is %s", currentCLIMinorVer)
+	log.Debugf("Next image minor version is %s", nextImageMinorVer)
+
+	cliImageCompare := semver.Compare(currentCLIMinorVer, currentImageMinorVer)
+
+	allowedMinorVersions := []string{currentImageMinorVer, nextImageMinorVer}
+	switch {
+	case cliImageCompare < 0:
+		cmd.PrintErrln("Warning: CLI version is older than cluster image version. This is not supported.")
+	case cliImageCompare == 0:
+		allowedMinorVersions = []string{currentImageMinorVer}
+	case cliImageCompare > 0:
+		allowedMinorVersions = []string{currentImageMinorVer, nextImageMinorVer}
+	}
+	log.Debugf("Allowed minor versions are %#v", allowedMinorVersions)
+
+	newerImages, err := v.newerVersions(cmd.Context(), currentImageMinorVer, allowedMinorVersions, log)
+	if err != nil {
+		return nil, err
+	}
+
+	// get expected measurements for each image
+	upgrades, err := getCompatibleImageMeasurements(cmd.Context(), cmd, v.client, v.rekor, []byte(v.flags.cosignPubKey), csp, newerImages)
+	if err != nil {
+		return nil, fmt.Errorf("fetching measurements for compatible images: %w", err)
+	}
+	log.Debugf("Compatible image measurements are %v", upgrades)
+
+	if len(upgrades) == 0 {
+		cmd.PrintErrln("No compatible images found to upgrade to.")
+		return nil, nil
+	}
+
+	// write upgrade plan to stdout
+	log.Debugf("Writing upgrade plan to stdout")
+	content, err := encoder.NewEncoder(upgrades).Encode()
+	if err != nil {
+		return nil, fmt.Errorf("encoding compatible images: %w", err)
+	}
+	_, err = cmd.OutOrStdout().Write(content)
+	if err != nil {
+		return nil, err
+	}
+
+	// write upgrade plan to file
+	if v.flags.writeConfig {
+		log.Debugf("Writing upgrade plan to file")
+		v.fileHandler.WriteYAML("flags.filePath", upgrades)
+	}
+	return newerImages, nil
+}
+
+func (v *versionCollector) newerVersions(ctx context.Context, currentVersion string, allowedVersions []string, log debugLog) ([]string, error) {
 	var updateCandidates []string
 	for _, minorVer := range allowedVersions {
 		patchList := versionsapi.List{
@@ -174,17 +293,17 @@ func (up *upgradeCheckCmd) getNewerVersions(ctx context.Context, verListFetcher 
 			Granularity: versionsapi.GranularityMinor,
 			Kind:        versionsapi.VersionKindImage,
 		}
-		patchList, err := verListFetcher.FetchVersionList(ctx, patchList)
+		patchList, err := v.verListFetcher.FetchVersionList(ctx, patchList)
 		if err != nil {
 			return nil, fmt.Errorf("fetching version list: %w", err)
 		}
 		updateCandidates = append(updateCandidates, patchList.Versions...)
 	}
-	up.log.Debugf("Update candidates are %v", updateCandidates)
+	log.Debugf("Update candidates are %v", updateCandidates)
 
 	// filter for newer images only
-	newerVersions := consemver.FilterNewerVersion(currentVersion, updateCandidates)
-	up.log.Debugf("Of those versions, these ones are newer: %v", newerVersions)
+	newerVersions := compatibility.FilterNewerVersion(currentVersion, updateCandidates)
+	log.Debugf("Of those versions, these ones are newer: %v", newerVersions)
 
 	return newerVersions, nil
 }
@@ -196,43 +315,61 @@ type versionUpgrade struct {
 	currentServicesVersions   map[string]string
 	currentImageVersion       string
 	currentK8sVersion         string
+	newCLIVersions            []string
 }
 
 func (v *versionUpgrade) buildString() (string, error) {
-	result := bytes.Buffer{}
+	upgradeMsg := bytes.Buffer{}
 
 	_, msg := printUpdate(v.currentK8sVersion, v.supportedK8sVersions)
 	if len(msg) > 0 {
-		fmt.Fprintf(&result, "  Kubernetes: %s --> ", v.currentK8sVersion)
-		fmt.Fprint(&result, msg)
-		fmt.Fprintln(&result, "")
+		fmt.Fprintf(&upgradeMsg, "  Kubernetes: %s --> ", v.currentK8sVersion)
+		fmt.Fprint(&upgradeMsg, msg)
+		fmt.Fprintln(&upgradeMsg, "")
 	}
 
 	_, msg = printUpdate(v.currentImageVersion, v.supportedImageVersions)
 	if len(msg) > 0 {
-		fmt.Fprintf(&result, "  Image: %s --> ", v.currentImageVersion)
-		fmt.Fprint(&result, msg)
-		fmt.Fprintln(&result, "")
+		fmt.Fprintf(&upgradeMsg, "  Image: %s --> ", v.currentImageVersion)
+		fmt.Fprint(&upgradeMsg, msg)
+		fmt.Fprintln(&upgradeMsg, "")
 
 	}
 
 	if len(v.supportedServicesVersions) != len(v.currentServicesVersions) {
 		return "", errors.New("mismatching service maps")
 	}
-	msgmsg := bytes.Buffer{}
+
+	serviceMsgs := []string{}
 	for k := range v.currentServicesVersions {
 		_, msg = printUpdate(v.currentServicesVersions[k], []string{v.supportedServicesVersions[k]})
 		if len(msg) > 0 {
-			fmt.Fprintf(&msgmsg, "    %s: %s --> ", k, v.currentServicesVersions[k])
-			fmt.Fprint(&msgmsg, msg)
-			fmt.Fprintln(&msgmsg, "")
+			serviceMsgs = append(serviceMsgs, fmt.Sprintf("    %s: %s --> %s", k, v.currentServicesVersions[k], msg))
 		}
 	}
-	if len(msgmsg.String()) > 0 {
-		fmt.Fprintf(&result, "  Services:\n")
-		fmt.Fprint(&result, msgmsg.String())
-		fmt.Fprintln(&result, "")
+	sort.Strings(serviceMsgs)
+	serviceUpgradeMsg := strings.Join(serviceMsgs, "\n")
+
+	if len(serviceMsgs) > 0 {
+		fmt.Fprintf(&upgradeMsg, "  Services:\n")
+		fmt.Fprint(&upgradeMsg, serviceUpgradeMsg)
+		fmt.Fprintln(&upgradeMsg, "")
 	}
+
+	result := bytes.Buffer{}
+	if len(upgradeMsg.String()) > 0 {
+		fmt.Fprintln(&result, "The following updates are available with this CLI:")
+		fmt.Fprint(&result, upgradeMsg.String())
+		return result.String(), nil
+	}
+
+	if len(v.newCLIVersions) > 0 {
+		fmt.Fprintf(&result, "More versions are available with these CLI versions: %s\n", strings.Join(v.newCLIVersions, " "))
+		fmt.Fprintln(&result, "Download at: https://github.com/edgelesssys/constellation/releases")
+		return result.String(), nil
+	}
+
+	fmt.Fprintln(&result, "No further updates available.")
 
 	return result.String(), nil
 }
@@ -247,7 +384,7 @@ func printUpdate(currentVersion string, supportedVersions []string) (string, str
 	buf := bytes.Buffer{}
 	selectedVersion := ""
 	for i, version := range supportedVersions {
-		validUpgrade, err := consemver.IsValidUpgrade(currentVersion, version)
+		validUpgrade, err := compatibility.IsValidUpgrade(currentVersion, version)
 		if err != nil {
 			continue
 		}
@@ -265,30 +402,6 @@ func printUpdate(currentVersion string, supportedVersions []string) (string, str
 	}
 
 	return selectedVersion, strings.TrimSpace(buf.String())
-}
-
-func (up *upgradeCheckCmd) collectCurrentVersions(ctx context.Context, checker upgradeChecker) (serviceVersions map[string]string, imageVersion string, k8sVersion string, err error) {
-	helmClient, err := helm.NewClient(kubectl.New(), constants.AdminConfFilename, constants.HelmNamespace, up.log)
-	if err != nil {
-		return nil, "", "", fmt.Errorf("setting up helm client: %w", err)
-	}
-
-	serviceVersions, err = helmClient.Versions()
-	if err != nil {
-		return nil, "", "", fmt.Errorf("getting service versions: %w", err)
-	}
-
-	imageVersion, err = getCurrentImageVersion(ctx, checker)
-	if err != nil {
-		return nil, "", "", fmt.Errorf("getting image version: %w", err)
-	}
-
-	k8sVersion, err = getCurrentKubernetesVersion(ctx, checker)
-	if err != nil {
-		return nil, "", "", fmt.Errorf("getting image version: %w", err)
-	}
-
-	return serviceVersions, imageVersion, k8sVersion, nil
 }
 
 // getCurrentImageVersion retrieves the semantic version of the image currently installed in the cluster.
@@ -322,85 +435,6 @@ func getCurrentKubernetesVersion(ctx context.Context, checker upgradeChecker) (s
 
 func getCurrentCLIVersion() string {
 	return "v" + constants.VersionInfo
-}
-
-func (up *upgradeCheckCmd) collectSupportedVersions(cmd *cobra.Command, version string, verListFetcher versionListFetcher,
-	fileHandler file.Handler, client *http.Client, rekor rekorVerifier, flags upgradeCheckFlags, csp cloudprovider.Provider,
-	cliVersion string,
-) (serviceVersions map[string]string, imageVersions []string, k8sVersions []string, err error) {
-	k8sVersions = versions.SupportedK8sVersions()
-	serviceVersions, err = helm.AvailableServiceVersions()
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("loading service versions: %w", err)
-	}
-	imageVersions, err = up.fetchNewImages(cmd, version, verListFetcher, fileHandler, client, rekor, flags, csp, cliVersion)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("loading image versions: %w", err)
-	}
-
-	return serviceVersions, imageVersions, k8sVersions, nil
-}
-
-func (up *upgradeCheckCmd) fetchNewImages(cmd *cobra.Command, version string, verListFetcher versionListFetcher, fileHandler file.Handler, client *http.Client, rekor rekorVerifier, flags upgradeCheckFlags, csp cloudprovider.Provider, cliVersion string) ([]string, error) {
-	// find compatible images
-	// image updates should always be possible for the current minor version of the cluster
-	// (e.g. 0.1.0 -> 0.1.1, 0.1.2, 0.1.3, etc.)
-	// additionally, we allow updates to the next minor version (e.g. 0.1.0 -> 0.2.0)
-	// if the CLI minor version is newer than the cluster minor version
-	currentImageMinorVer := semver.MajorMinor(version)
-	currentCLIMinorVer := semver.MajorMinor(cliVersion)
-	nextImageMinorVer, err := consemver.NextMinorVersion(currentImageMinorVer)
-	if err != nil {
-		return nil, fmt.Errorf("calculating next image minor version: %w", err)
-	}
-	up.log.Debugf("Current image minor version is %s", currentImageMinorVer)
-	up.log.Debugf("Current CLI minor version is %s", currentCLIMinorVer)
-	up.log.Debugf("Next image minor version is %s", nextImageMinorVer)
-
-	cliImageCompare := semver.Compare(currentCLIMinorVer, currentImageMinorVer)
-
-	allowedMinorVersions := []string{currentImageMinorVer, nextImageMinorVer}
-	switch {
-	case cliImageCompare < 0:
-		cmd.PrintErrln("Warning: CLI version is older than cluster image version. This is not supported.")
-	case cliImageCompare == 0:
-		allowedMinorVersions = []string{currentImageMinorVer}
-	case cliImageCompare > 0:
-		allowedMinorVersions = []string{currentImageMinorVer, nextImageMinorVer}
-	}
-	up.log.Debugf("Allowed minor versions are %#v", allowedMinorVersions)
-
-	newerImages, err := up.getNewerVersions(cmd.Context(), verListFetcher, currentImageMinorVer, allowedMinorVersions)
-	if err != nil {
-		return nil, err
-	}
-
-	// get expected measurements for each image
-	upgrades, err := getCompatibleImageMeasurements(cmd.Context(), cmd, client, rekor, []byte(flags.cosignPubKey), csp, newerImages)
-	if err != nil {
-		return nil, fmt.Errorf("fetching measurements for compatible images: %w", err)
-	}
-	up.log.Debugf("Compatible image measurements are %v", upgrades)
-
-	if len(upgrades) == 0 {
-		cmd.PrintErrln("No compatible images found to upgrade to.")
-		return nil, nil
-	}
-
-	// write upgrade plan to stdout
-	up.log.Debugf("Writing upgrade plan to stdout")
-	content, err := encoder.NewEncoder(upgrades).Encode()
-	if err != nil {
-		return nil, fmt.Errorf("encoding compatible images: %w", err)
-	}
-	_, err = cmd.OutOrStdout().Write(content)
-
-	// write upgrade plan to file
-	if flags.writeConfig {
-		up.log.Debugf("Writing upgrade plan to file")
-		fileHandler.WriteYAML("flags.filePath", upgrades)
-	}
-	return newerImages, nil
 }
 
 // getCompatibleImageMeasurements retrieves the expected measurements for each image.

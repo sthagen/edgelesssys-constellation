@@ -51,9 +51,9 @@ func runDeploy(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("parsing config path argument: %w", err)
 	}
 	fileHandler := file.NewHandler(afero.NewOsFs())
-	constellationConfig, err := config.FromFile(fileHandler, configName)
+	constellationConfig, err := config.New(fileHandler, configName)
 	if err != nil {
-		return err
+		return config.DisplayValidationErrors(cmd.ErrOrStderr(), err)
 	}
 
 	return deploy(cmd, fileHandler, constellationConfig, bootstrapper.NewFileStreamer(afero.NewOsFs()))

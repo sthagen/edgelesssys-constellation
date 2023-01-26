@@ -7,7 +7,6 @@ SPDX-License-Identifier: AGPL-3.0-only
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -29,24 +28,106 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
+// TestBuildString checks that the resulting user output is as expected. Slow part is the Sscanf in parseCanonicalSemver().
+func TestBuildString(t *testing.T) {
+	testCases := map[string]struct {
+		upgrade   versionUpgrade
+		expected  string
+		wantError bool
+	}{
+		"update everything": {
+			upgrade: versionUpgrade{
+				supportedServicesVersions: map[string]string{
+					"constellation-services":  "v2.5.0",
+					"constellation-operators": "v2.5.0",
+				},
+				supportedImageVersions: []string{"v2.3.0", "v2.4.0", "v2.5.0"},
+				supportedK8sVersions:   []string{"v1.24.5", "v1.24.12", "v1.25.6"},
+				currentServicesVersions: map[string]string{
+					"constellation-services":  "v2.4.0",
+					"constellation-operators": "v2.4.0",
+				},
+				currentImageVersion: "v2.4.0",
+				currentK8sVersion:   "v1.24.5",
+				newCLIVersions:      []string{"v2.5.0", "v2.6.0"},
+			},
+			expected: "The following updates are available with this CLI:\n  Kubernetes: v1.24.5 --> v1.24.12 v1.25.6\n  Image: v2.4.0 --> v2.5.0\n  Services:\n    constellation-operators: v2.4.0 --> v2.5.0\n    constellation-services: v2.4.0 --> v2.5.0\n",
+		},
+		"new cli": {
+			upgrade: versionUpgrade{
+				supportedServicesVersions: map[string]string{
+					"constellation-services":  "v2.5.0",
+					"constellation-operators": "v2.5.0",
+				},
+				supportedImageVersions: []string{"v2.3.0", "v2.4.0", "v2.5.0"},
+				supportedK8sVersions:   []string{"v1.24.5", "v1.24.12", "v1.25.6"},
+				currentServicesVersions: map[string]string{
+					"constellation-services":  "v2.5.0",
+					"constellation-operators": "v2.5.0",
+				},
+				currentImageVersion: "v2.5.0",
+				currentK8sVersion:   "v1.25.6",
+				newCLIVersions:      []string{"v2.6.0"},
+			},
+			expected: "More versions are available with these CLI versions: v2.6.0\nDownload at: https://github.com/edgelesssys/constellation/releases\n",
+		},
+		"no upgrades": {
+			upgrade: versionUpgrade{
+				supportedServicesVersions: map[string]string{
+					"constellation-services":  "v2.5.0",
+					"constellation-operators": "v2.5.0",
+				},
+				supportedImageVersions: []string{"v2.3.0", "v2.4.0", "v2.5.0"},
+				supportedK8sVersions:   []string{"v1.24.5", "v1.24.12", "v1.25.6"},
+				currentServicesVersions: map[string]string{
+					"constellation-services":  "v2.5.0",
+					"constellation-operators": "v2.5.0",
+				},
+				currentImageVersion: "v2.5.0",
+				currentK8sVersion:   "v1.25.6",
+				newCLIVersions:      []string{},
+			},
+			expected: "No further updates available.\n",
+		},
+		"no upgrades #2": {
+			upgrade:  versionUpgrade{},
+			expected: "No further updates available.\n",
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			assert := assert.New(t)
+
+			result, err := tc.upgrade.buildString()
+			if tc.wantError {
+				assert.Error(err)
+				return
+			}
+			assert.NoError(err)
+			assert.Equal(tc.expected, result)
+		})
+	}
+}
+
 func TestGetCurrentImageVersion(t *testing.T) {
 	testCases := map[string]struct {
-		stubUpgradePlanner stubUpgradePlanner
+		stubUpgradeChecker stubUpgradeChecker
 		wantErr            bool
 	}{
 		"valid version": {
-			stubUpgradePlanner: stubUpgradePlanner{
+			stubUpgradeChecker: stubUpgradeChecker{
 				image: "v1.0.0",
 			},
 		},
 		"invalid version": {
-			stubUpgradePlanner: stubUpgradePlanner{
+			stubUpgradeChecker: stubUpgradeChecker{
 				image: "invalid",
 			},
 			wantErr: true,
 		},
 		"GetCurrentImage error": {
-			stubUpgradePlanner: stubUpgradePlanner{
+			stubUpgradeChecker: stubUpgradeChecker{
 				err: errors.New("error"),
 			},
 			wantErr: true,
@@ -57,7 +138,7 @@ func TestGetCurrentImageVersion(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			assert := assert.New(t)
 
-			version, err := getCurrentImageVersion(context.Background(), tc.stubUpgradePlanner)
+			version, err := getCurrentImageVersion(context.Background(), tc.stubUpgradeChecker)
 			if tc.wantErr {
 				assert.Error(err)
 				return
@@ -65,45 +146,6 @@ func TestGetCurrentImageVersion(t *testing.T) {
 
 			assert.NoError(err)
 			assert.True(semver.IsValid(version))
-		})
-	}
-}
-
-func TestGetCompatibleImages(t *testing.T) {
-	imageList := []string{
-		"v0.0.0",
-		"v1.0.0",
-		"v1.0.1",
-		"v1.0.2",
-		"v1.1.0",
-	}
-
-	testCases := map[string]struct {
-		images     []string
-		version    string
-		wantImages []string
-	}{
-		"filters <= v1.0.0": {
-			images:  imageList,
-			version: "v1.0.0",
-			wantImages: []string{
-				"v1.0.1",
-				"v1.0.2",
-				"v1.1.0",
-			},
-		},
-		"no compatible images": {
-			images:  imageList,
-			version: "v999.999.999",
-		},
-	}
-
-	for name, tc := range testCases {
-		t.Run(name, func(t *testing.T) {
-			assert := assert.New(t)
-
-			compatibleImages := getCompatibleImages(tc.version, tc.images)
-			assert.EqualValues(tc.wantImages, compatibleImages)
 		})
 	}
 }
@@ -163,200 +205,35 @@ func TestGetCompatibleImageMeasurements(t *testing.T) {
 }
 
 func TestUpgradePlan(t *testing.T) {
-	availablePatches := versionsapi.List{
-		Versions: []string{"v1.0.0", "v1.0.1"},
-	}
-
-	// Cosign private key used to sign the measurements.
-	// Generated with: cosign generate-key-pair
-	// Password left empty.
-	//
-	// -----BEGIN ENCRYPTED COSIGN PRIVATE KEY-----
-	// eyJrZGYiOnsibmFtZSI6InNjcnlwdCIsInBhcmFtcyI6eyJOIjozMjc2OCwiciI6
-	// OCwicCI6MX0sInNhbHQiOiJlRHVYMWRQMGtIWVRnK0xkbjcxM0tjbFVJaU92eFVX
-	// VXgvNi9BbitFVk5BPSJ9LCJjaXBoZXIiOnsibmFtZSI6Im5hY2wvc2VjcmV0Ym94
-	// Iiwibm9uY2UiOiJwaWhLL2txNmFXa2hqSVVHR3RVUzhTVkdHTDNIWWp4TCJ9LCJj
-	// aXBoZXJ0ZXh0Ijoidm81SHVWRVFWcUZ2WFlQTTVPaTVaWHM5a255bndZU2dvcyth
-	// VklIeHcrOGFPamNZNEtvVjVmL3lHRHR0K3BHV2toanJPR1FLOWdBbmtsazFpQ0c5
-	// a2czUXpPQTZsU2JRaHgvZlowRVRZQ0hLeElncEdPRVRyTDlDenZDemhPZXVSOXJ6
-	// TDcvRjBBVy9vUDVqZXR3dmJMNmQxOEhjck9kWE8yVmYxY2w0YzNLZjVRcnFSZzlN
-	// dlRxQWFsNXJCNHNpY1JaMVhpUUJjb0YwNHc9PSJ9
-	// -----END ENCRYPTED COSIGN PRIVATE KEY-----
-	pubK := "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEu78QgxOOcao6U91CSzEXxrKhvFTt\nJHNy+eX6EMePtDm8CnDF9HSwnTlD0itGJ/XHPQA5YX10fJAqI1y+ehlFMw==\n-----END PUBLIC KEY-----"
-
 	testCases := map[string]struct {
-		patchLister             stubVersionListFetcher
-		planner                 stubUpgradePlanner
-		flags                   upgradeCheckFlags
-		cliVersion              string
-		csp                     cloudprovider.Provider
-		verifier                rekorVerifier
-		measurementsFetchStatus int
-		wantUpgrade             bool
-		wantErr                 bool
+		collector  stubVersionCollector
+		flags      upgradeCheckFlags
+		csp        cloudprovider.Provider
+		cliVersion string
+		wantError  bool
 	}{
 		"upgrades gcp": {
-			patchLister: stubVersionListFetcher{list: availablePatches},
-			planner: stubUpgradePlanner{
-				image: "v1.0.0",
+			collector: stubVersionCollector{
+				supportedServicesVersions: map[string]string{
+					"constellation-services":  "v2.5.0",
+					"constellation-operators": "v2.5.0",
+				},
+				supportedImageVersions: []string{"v2.3.0", "v2.4.0", "v2.5.0"},
+				supportedK8sVersions:   []string{"v1.24.5", "v1.24.12", "v1.25.6"},
+				currentServicesVersions: map[string]string{
+					"constellation-services":  "v2.4.0",
+					"constellation-operators": "v2.4.0",
+				},
+				currentImageVersion: "v2.4.0",
+				currentK8sVersion:   "v1.24.5",
+				images:              []string{"v2.5.0"},
+				newCLIVersions:      []string{"v2.5.0", "v2.6.0"},
 			},
-			measurementsFetchStatus: http.StatusOK,
 			flags: upgradeCheckFlags{
-				configPath:   constants.ConfigFilename,
-				writeConfig:  false,
-				cosignPubKey: pubK,
-			},
-			cliVersion:  "v1.0.0",
-			csp:         cloudprovider.GCP,
-			verifier:    singleUUIDVerifier(),
-			wantUpgrade: true,
-		},
-		"upgrades azure": {
-			patchLister: stubVersionListFetcher{list: availablePatches},
-			planner: stubUpgradePlanner{
-				image: "v1.0.0",
-			},
-			measurementsFetchStatus: http.StatusOK,
-			flags: upgradeCheckFlags{
-				configPath:   constants.ConfigFilename,
-				writeConfig:  false,
-				cosignPubKey: pubK,
-			},
-			csp:         cloudprovider.Azure,
-			cliVersion:  "v999.999.999",
-			verifier:    singleUUIDVerifier(),
-			wantUpgrade: true,
-		},
-		"current image newer than updates": {
-			patchLister: stubVersionListFetcher{list: availablePatches},
-			planner: stubUpgradePlanner{
-				image: "v999.999.999",
-			},
-			measurementsFetchStatus: http.StatusOK,
-			flags: upgradeCheckFlags{
-				configPath:   constants.ConfigFilename,
-				writeConfig:  false,
-				cosignPubKey: pubK,
-			},
-			csp:         cloudprovider.GCP,
-			verifier:    singleUUIDVerifier(),
-			wantUpgrade: false,
-		},
-		"current image newer than cli": {
-			patchLister: stubVersionListFetcher{list: availablePatches},
-			planner: stubUpgradePlanner{
-				image: "v999.999.999",
-			},
-			measurementsFetchStatus: http.StatusOK,
-			flags: upgradeCheckFlags{
-				configPath:   constants.ConfigFilename,
-				writeConfig:  false,
-				cosignPubKey: pubK,
-			},
-			csp:         cloudprovider.GCP,
-			cliVersion:  "v1.0.0",
-			verifier:    singleUUIDVerifier(),
-			wantUpgrade: false,
-		},
-		"upgrade to stdout": {
-			patchLister: stubVersionListFetcher{list: availablePatches},
-			planner: stubUpgradePlanner{
-				image: "v1.0.0",
-			},
-			measurementsFetchStatus: http.StatusOK,
-			flags: upgradeCheckFlags{
-				configPath:   constants.ConfigFilename,
-				writeConfig:  false,
-				cosignPubKey: pubK,
-			},
-			csp:         cloudprovider.GCP,
-			cliVersion:  "v1.0.0",
-			verifier:    singleUUIDVerifier(),
-			wantUpgrade: true,
-		},
-		"current image not valid": {
-			patchLister: stubVersionListFetcher{list: availablePatches},
-			planner: stubUpgradePlanner{
-				image: "not-valid",
-			},
-			measurementsFetchStatus: http.StatusOK,
-			flags: upgradeCheckFlags{
-				configPath:   constants.ConfigFilename,
-				writeConfig:  false,
-				cosignPubKey: pubK,
+				configPath: constants.ConfigFilename,
 			},
 			csp:        cloudprovider.GCP,
 			cliVersion: "v1.0.0",
-			verifier:   singleUUIDVerifier(),
-			wantErr:    true,
-		},
-		"image fetch error": {
-			patchLister: stubVersionListFetcher{err: errors.New("error")},
-			planner: stubUpgradePlanner{
-				image: "v1.0.0",
-			},
-			measurementsFetchStatus: http.StatusOK,
-			flags: upgradeCheckFlags{
-				configPath:   constants.ConfigFilename,
-				writeConfig:  false,
-				cosignPubKey: pubK,
-			},
-			csp:        cloudprovider.GCP,
-			cliVersion: "v1.0.0",
-			verifier:   singleUUIDVerifier(),
-		},
-		"measurements fetch error": {
-			patchLister: stubVersionListFetcher{list: availablePatches},
-			planner: stubUpgradePlanner{
-				image: "v1.0.0",
-			},
-			measurementsFetchStatus: http.StatusInternalServerError,
-			flags: upgradeCheckFlags{
-				configPath:   constants.ConfigFilename,
-				writeConfig:  false,
-				cosignPubKey: pubK,
-			},
-			csp:        cloudprovider.GCP,
-			cliVersion: "v1.0.0",
-			verifier:   singleUUIDVerifier(),
-		},
-		"failing search should not result in error": {
-			patchLister: stubVersionListFetcher{list: availablePatches},
-			planner: stubUpgradePlanner{
-				image: "v1.0.0",
-			},
-			measurementsFetchStatus: http.StatusOK,
-			flags: upgradeCheckFlags{
-				configPath:   constants.ConfigFilename,
-				writeConfig:  false,
-				cosignPubKey: pubK,
-			},
-			csp:        cloudprovider.GCP,
-			cliVersion: "v1.0.0",
-			verifier: &stubRekorVerifier{
-				SearchByHashUUIDs: []string{},
-				SearchByHashError: errors.New("some error"),
-			},
-			wantUpgrade: true,
-		},
-		"failing verify should not result in error": {
-			patchLister: stubVersionListFetcher{list: availablePatches},
-			planner: stubUpgradePlanner{
-				image: "v1.0.0",
-			},
-			measurementsFetchStatus: http.StatusOK,
-			flags: upgradeCheckFlags{
-				configPath:   constants.ConfigFilename,
-				writeConfig:  false,
-				cosignPubKey: pubK,
-			},
-			csp:        cloudprovider.GCP,
-			cliVersion: "v1.0.0",
-			verifier: &stubRekorVerifier{
-				SearchByHashUUIDs: []string{"11111111111111111111111111111111111111111111111111111111111111111111111111111111"},
-				VerifyEntryError:  errors.New("some error"),
-			},
-			wantUpgrade: true,
 		},
 	}
 
@@ -367,124 +244,65 @@ func TestUpgradePlan(t *testing.T) {
 
 			fileHandler := file.NewHandler(afero.NewMemMapFs())
 			cfg := defaultConfigWithExpectedMeasurements(t, config.Default(), tc.csp)
-
 			require.NoError(fileHandler.WriteYAML(tc.flags.configPath, cfg))
 
+			checkCmd := upgradeCheckCmd{
+				collect: &tc.collector,
+				log:     logger.NewTest(t),
+			}
+
 			cmd := newUpgradeCheckCmd()
-			cmd.SetContext(context.Background())
-			var outTarget bytes.Buffer
-			cmd.SetOut(&outTarget)
-			var errTarget bytes.Buffer
-			cmd.SetErr(&errTarget)
 
-			client := newTestClient(func(req *http.Request) *http.Response {
-				if strings.HasSuffix(req.URL.String(), "azure/measurements.json") {
-					return &http.Response{
-						StatusCode: tc.measurementsFetchStatus,
-						Body:       io.NopCloser(strings.NewReader(`{"csp":"azure","image":"v1.0.1","measurements":{"0":{"expected":"0000000000000000000000000000000000000000000000000000000000000000","warnOnly":false}}}`)),
-						Header:     make(http.Header),
-					}
-				}
-				if strings.HasSuffix(req.URL.String(), "azure/measurements.json.sig") {
-					return &http.Response{
-						StatusCode: tc.measurementsFetchStatus,
-						Body:       io.NopCloser(strings.NewReader("MEYCIQDu2Sft91FjN278uP+r/HFMms6IH/tRtaHzYvIN0xPgdwIhAJhiFxVsHCa0NK6bZOGLE9c4miZHIqFTKvgpTf3rJ9dW")),
-						Header:     make(http.Header),
-					}
-				}
-
-				if strings.HasSuffix(req.URL.String(), "gcp/measurements.json") {
-					return &http.Response{
-						StatusCode: tc.measurementsFetchStatus,
-						Body:       io.NopCloser(strings.NewReader(`{"csp":"gcp","image":"v1.0.1","measurements":{"0":{"expected":"0000000000000000000000000000000000000000000000000000000000000000","warnOnly":false}}}`)),
-						Header:     make(http.Header),
-					}
-				}
-				if strings.HasSuffix(req.URL.String(), "gcp/measurements.json.sig") {
-					return &http.Response{
-						StatusCode: tc.measurementsFetchStatus,
-						Body:       io.NopCloser(strings.NewReader("MEQCIBUssv92LpSMiXE1UAVf2fW8J9pZHiLseo2tdZjxv2OMAiB6K8e8yL0768jWjlFnRe3Rc2x/dX34uzX3h0XUrlYt1A==")),
-						Header:     make(http.Header),
-					}
-				}
-
-				return &http.Response{
-					StatusCode: http.StatusNotFound,
-					Body:       io.NopCloser(strings.NewReader("Not found.")),
-					Header:     make(http.Header),
-				}
-			})
-			up := &upgradeCheckCmd{log: logger.NewTest(t)}
-			err := up.upgradeCheck(cmd, tc.planner, tc.patchLister, fileHandler, client, tc.verifier, tc.flags, tc.cliVersion)
-			if tc.wantErr {
+			err := checkCmd.upgradeCheck(cmd, fileHandler, tc.flags, tc.cliVersion)
+			if tc.wantError {
 				assert.Error(err)
 				return
 			}
-
 			assert.NoError(err)
-			if !tc.wantUpgrade {
-				assert.Contains(errTarget.String(), "No compatible images")
-				return
-			}
-
-			var availableUpgrades map[string]config.UpgradeConfig
-			// if tc.flags.writeConfig {
-			// 	require.NoError(yaml.Unmarshal(outTarget.Bytes(), &availableUpgrades))
-			// } else {
-			// 	require.NoError(fileHandler.ReadYAMLStrict(tc.flags.writeConfig, &availableUpgrades))
-			// }
-
-			assert.GreaterOrEqual(len(availableUpgrades), 1)
-			for _, upgrade := range availableUpgrades {
-				assert.NotEmpty(upgrade.Image)
-				assert.NotEmpty(upgrade.Measurements)
-			}
 		})
 	}
 }
 
-func TestNextMinorVersion(t *testing.T) {
-	testCases := map[string]struct {
-		version              string
-		wantNextMinorVersion string
-		wantErr              bool
-	}{
-		"gets next": {
-			version:              "v1.0.0",
-			wantNextMinorVersion: "v1.1",
-		},
-		"gets next from minor version": {
-			version:              "v1.0",
-			wantNextMinorVersion: "v1.1",
-		},
-		"empty version": {
-			wantErr: true,
-		},
-	}
-
-	for name, tc := range testCases {
-		t.Run(name, func(t *testing.T) {
-			assert := assert.New(t)
-
-			gotNext, err := nextMinorVersion(tc.version)
-			if tc.wantErr {
-				assert.Error(err)
-				return
-			}
-
-			assert.NoError(err)
-			assert.Equal(tc.wantNextMinorVersion, gotNext)
-		})
-	}
+type stubVersionCollector struct {
+	supportedServicesVersions map[string]string
+	supportedImageVersions    []string
+	supportedK8sVersions      []string
+	currentServicesVersions   map[string]string
+	currentImageVersion       string
+	currentK8sVersion         string
+	images                    []string
+	newCLIVersions            []string
+	someErr                   error
 }
 
-type stubUpgradePlanner struct {
-	image string
-	err   error
+func (s *stubVersionCollector) currentVersions(ctx context.Context, log debugLog) (serviceVersions map[string]string, imageVersion string, k8sVersion string, err error) {
+	return s.currentServicesVersions, s.currentImageVersion, s.currentK8sVersion, s.someErr
 }
 
-func (u stubUpgradePlanner) GetCurrentImage(context.Context) (*unstructured.Unstructured, string, error) {
+func (s *stubVersionCollector) supportedVersions(cmd *cobra.Command, version string, csp cloudprovider.Provider, log debugLog) (serviceVersions map[string]string, imageVersions []string, k8sVersions []string, err error) {
+	return s.supportedServicesVersions, s.supportedImageVersions, s.supportedK8sVersions, s.someErr
+}
+
+func (s *stubVersionCollector) newImages(cmd *cobra.Command, version string, csp cloudprovider.Provider, log debugLog) ([]string, error) {
+	return s.images, nil
+}
+
+func (s *stubVersionCollector) newerVersions(ctx context.Context, currentVersion string, allowedVersions []string, log debugLog) ([]string, error) {
+	return s.newCLIVersions, nil
+}
+
+type stubUpgradeChecker struct {
+	image      string
+	k8sVersion string
+	err        error
+}
+
+func (u stubUpgradeChecker) GetCurrentImage(context.Context) (*unstructured.Unstructured, string, error) {
 	return nil, u.image, u.err
+}
+
+func (u stubUpgradeChecker) GetCurrentKubernetesVersion(ctx context.Context) (*unstructured.Unstructured, string, error) {
+	return nil, u.k8sVersion, u.err
 }
 
 type stubVersionListFetcher struct {

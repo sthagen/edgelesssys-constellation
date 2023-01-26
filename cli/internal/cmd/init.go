@@ -95,7 +95,7 @@ func (i *initCmd) initialize(cmd *cobra.Command, newDialer func(validator *cloud
 	i.log.Debugf("Loading configuration file from %q", flags.configPath)
 	conf, err := config.New(fileHandler, flags.configPath)
 	if err != nil {
-		return displayConfigValidationErrors(cmd.ErrOrStderr(), err)
+		return config.DisplayValidationErrors(cmd.ErrOrStderr(), err)
 	}
 
 	i.log.Debugf("Checking cluster ID file")

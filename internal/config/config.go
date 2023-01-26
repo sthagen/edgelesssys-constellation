@@ -249,10 +249,11 @@ type QEMUConfig struct {
 // Default returns a struct with the default config.
 func Default() *Config {
 	return &Config{
-		Version:         Version2,
-		Image:           defaultImage,
-		StateDiskSizeGB: 30,
-		DebugCluster:    func() *bool { b := false; return &b }(),
+		Version:             Version2,
+		Image:               defaultImage,
+		MicroserviceVersion: constants.VersionInfo,
+		StateDiskSizeGB:     30,
+		DebugCluster:        func() *bool { b := false; return &b }(),
 		Provider: ProviderConfig{
 			AWS: &AWSConfig{
 				Region:                 "",
@@ -493,6 +494,10 @@ func (c *Config) Validate() error {
 	}
 
 	if err := validate.RegisterTranslation("version_compatibility", trans, registerVersionCompatibilityError, translateVersionCompatibilityError); err != nil {
+		return err
+	}
+
+	if err := validate.RegisterTranslation("supported_k8s_version", trans, registerInvalidK8sVersionError, translateInvalidK8sVersionError); err != nil {
 		return err
 	}
 
