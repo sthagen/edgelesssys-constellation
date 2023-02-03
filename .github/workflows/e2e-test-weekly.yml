@@ -186,3 +186,11 @@ jobs:
             --force-deletion-types Microsoft.Compute/virtualMachines \
             --no-wait \
             --yes
+
+  e2e-upgrade:
+    name: Run upgrade tests
+    secrets: inherit
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/e2e-upgrade.yml
