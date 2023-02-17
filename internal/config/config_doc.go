@@ -357,7 +357,7 @@ func init() {
 			FieldName: "qemu",
 		},
 	}
-	QEMUConfigDoc.Fields = make([]encoder.Doc, 8)
+	QEMUConfigDoc.Fields = make([]encoder.Doc, 11)
 	QEMUConfigDoc.Fields[0].Name = "imageFormat"
 	QEMUConfigDoc.Fields[0].Type = "string"
 	QEMUConfigDoc.Fields[0].Note = ""
@@ -398,6 +398,21 @@ func init() {
 	QEMUConfigDoc.Fields[7].Note = ""
 	QEMUConfigDoc.Fields[7].Description = "Path to the OVMF firmware. Leave empty for auto selection."
 	QEMUConfigDoc.Fields[7].Comments[encoder.LineComment] = "Path to the OVMF firmware. Leave empty for auto selection."
+	QEMUConfigDoc.Fields[8].Name = "kernelBzImage"
+	QEMUConfigDoc.Fields[8].Type = "string"
+	QEMUConfigDoc.Fields[8].Note = ""
+	QEMUConfigDoc.Fields[8].Description = "Path to the kernel bzImage."
+	QEMUConfigDoc.Fields[8].Comments[encoder.LineComment] = "Path to the kernel bzImage."
+	QEMUConfigDoc.Fields[9].Name = "initrd"
+	QEMUConfigDoc.Fields[9].Type = "string"
+	QEMUConfigDoc.Fields[9].Note = ""
+	QEMUConfigDoc.Fields[9].Description = "Path to the kernel initrd."
+	QEMUConfigDoc.Fields[9].Comments[encoder.LineComment] = "Path to the kernel initrd."
+	QEMUConfigDoc.Fields[10].Name = "kernelCmdline"
+	QEMUConfigDoc.Fields[10].Type = "string"
+	QEMUConfigDoc.Fields[10].Note = ""
+	QEMUConfigDoc.Fields[10].Description = "Kernel cmdline."
+	QEMUConfigDoc.Fields[10].Comments[encoder.LineComment] = "Kernel cmdline."
 
 	AttestationConfigDoc.Type = "AttestationConfig"
 	AttestationConfigDoc.Comments[encoder.LineComment] = "AttestationConfig configuration values used for attestation."

@@ -258,6 +258,14 @@ type QEMUConfig struct {
 	// description: |
 	//   Path to the OVMF firmware. Leave empty for auto selection.
 	Firmware string `yaml:"firmware"`
+	//   Path to the kernel bzImage.
+	KernelBzImage string `yaml:"kernelBzImage"`
+	// description: |
+	//   Path to the kernel initrd.
+	Initrd string `yaml:"initrd"`
+	// description: |
+	//   Kernel cmdline.
+	KernelCmdline string `yaml:"kernelCmdline"`
 }
 
 // AttestationConfig configuration values used for attestation.
