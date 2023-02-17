@@ -10,10 +10,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"path"
 	"regexp"
 	"strings"
 
+	"github.com/edgelesssys/constellation/v2/internal/cloud/cloudprovider"
 	"github.com/edgelesssys/constellation/v2/internal/constants"
 	"golang.org/x/mod/semver"
 )
@@ -142,9 +144,17 @@ func (v Version) ListPath(gran Granularity) string {
 	)
 }
 
-// ArtifactURL returns the URL to the artifacts stored for this version.
+func (v Version) ArtifactURL(csp cloudprovider.Provider, file string) (*url.URL, error) {
+	path, err := url.JoinPath(v.ArtifactsURL(), "image", "csp", strings.ToLower(csp.String()), file)
+	if err != nil {
+		return &url.URL{}, err
+	}
+	return url.Parse(path)
+}
+
+// ArtifactsURL returns the URL to the artifacts stored for this version.
 // The URL points to a directory.
-func (v Version) ArtifactURL() string {
+func (v Version) ArtifactsURL() string {
 	return constants.CDNRepositoryURL + "/" + v.ArtifactPath()
 }
 
