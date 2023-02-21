@@ -339,6 +339,7 @@ func Default() *Config {
 				LibvirtURI:            "",
 				LibvirtContainerImage: imageversion.Libvirt(),
 				NVRAM:                 "production",
+				Firmware:              "/usr/share/qemu/OVMF.fd",
 			},
 		},
 		Attestation: AttestationConfig{
