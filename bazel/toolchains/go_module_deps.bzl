@@ -61,8 +61,8 @@ def go_dependencies():
         build_file_generation = "on",
         build_file_proto_mode = "disable_global",
         importpath = "github.com/AdaLogics/go-fuzz-headers",
-        sum = "h1:V8krnnfGj4pV65YLUm3C0/8bl7V5Nry2Pwvy3ru/wLc=",
-        version = "v0.0.0-20210715213245-6c3934b029d8",
+        sum = "h1:EKPd1INOIyr5hWOWhvpmQpY6tKjeG0hT1s3AMC/9fic=",
+        version = "v0.0.0-20230106234847-43070de90fa1",
     )
     go_repository(
         name = "com_github_adrg_xdg",
@@ -1856,6 +1856,14 @@ def go_dependencies():
         importpath = "github.com/edgelesssys/go-azguestattestation",
         sum = "h1:J9k1gV8YA5beC6jANKQy5O7UtaKS3ueuanxUan5Y5NU=",
         version = "v0.0.0-20230303085714-62ede861d33f",
+    )
+    go_repository(
+        name = "com_github_edgelesssys_go_tdx_qpl",
+        build_file_generation = "on",
+        build_file_proto_mode = "disable_global",
+        importpath = "github.com/edgelesssys/go-tdx-qpl",
+        sum = "h1:uQMmc/B1RGE2VeSsh/NqjRgEheqp1cjy8ELIDTFpaUw=",
+        version = "v0.0.0-20230307140231-bb361f158928",
     )
 
     go_repository(
@@ -6640,6 +6648,15 @@ def go_dependencies():
         sum = "h1:gpw/0Ku+6RgF3jsi7fnCLmlcikBHfKBCUcu1qgc16OU=",
         version = "v0.20.3",
     )
+    go_repository(
+        name = "com_github_vtolstov_go_ioctl",
+        build_file_generation = "on",
+        build_file_proto_mode = "disable_global",
+        importpath = "github.com/vtolstov/go-ioctl",
+        sum = "h1:X6ps8XHfpQjw8dUStzlMi2ybiKQ2Fmdw7UM+TinwvyM=",
+        version = "v0.0.0-20151206205506-6be9cced4810",
+    )
+
     go_repository(
         name = "com_github_weppos_publicsuffix_go",
         build_file_generation = "on",
