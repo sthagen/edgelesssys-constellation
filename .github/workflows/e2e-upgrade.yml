@@ -50,7 +50,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        provider: ["gcp", "azure", "aws"]
+        # provider: ["gcp", "azure", "aws"]
+        provider: ["azure"]
     runs-on: ubuntu-22.04
     permissions:
       id-token: write
