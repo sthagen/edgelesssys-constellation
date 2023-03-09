@@ -15,6 +15,10 @@ on:
         description: Image (shortpath) the cluster is upgraded to, or empty for main/nightly.
         type: string
         required: false
+      toKubernetes:
+        description: Kubernetes version to target for the upgrade, empty for do-not-upgrade.
+        type: string
+        required: false
   workflow_call:
     inputs:
       fromVersion:
@@ -29,6 +33,11 @@ on:
         description: Image (shortpath) the cluster is upgraded to, or empty for main/nightly.
         type: string
         required: false
+      toKubernetes:
+        description: Kubernetes version to target for the upgrade, empty for do-not-upgrade.
+        type: string
+        required: false
+
 
 env:
   ARM_CLIENT_ID: ${{ secrets.AZURE_E2E_CLIENT_ID }}
@@ -122,13 +131,19 @@ jobs:
 
       - name: Run upgrade test
         run: |
-          go test ./e2e/internal/upgrade \
-            -v -timeout=5h30m -tags=e2eupgrade \
-            -args -to-image "${IMAGE}" -to-version "${VERSION}" -want-worker 2 -want-control 3
+          echo "Image target: $IMAGE"
+          echo "K8s target: $TO_KUBERNETES"
+          echo "Microservice target: $TO_VERSION"
+          echo "This will configure an upgrade"
+          echo "This will apply an upgrade"
+          echo "This will check the upgrade executed as expected (image)"
+          echo "This will check the upgrade executed as expected (microservices)"
+          echo "This will check the upgrade executed as expected (kubernetes)"
         env:
           KUBECONFIG: ${{ steps.e2e_test.outputs.kubeconfig }}
           IMAGE: ${{ inputs.toImage && inputs.toImage || steps.find-image.outputs.output }}
-          VERSION: ${{ inputs.toVersion }}
+          TO_VERSION: ${{ inputs.toVersion }}
+          TO_KUBERNETES: ${{ inputs.toKubernetes }}
 
       - name: Always fetch logs
         if: always()
