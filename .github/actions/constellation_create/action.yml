@@ -155,16 +155,29 @@ runs:
       run: |
         yq eval -i '(.debugCluster) = true' constellation-conf.yaml
 
+    - name: Supports force flag
+      id: supports-force
+      shell: bash
+      run: |
+        export CONSTELLATION_VERSION=$(constellation version | grep -P "v\d+\.\d+.\d+")
+        if [[ "v2.6.0" == "$(echo -e "v2.6.0\nv$CONSTELLATION_VERSION" | sort -V | head -n 1)" ]]; then
+          echo FORCE_FLAG="--force" >> $GITHUB_OUTPUT
+        else
+          echo FORCE_FLAG="" >> $GITHUB_OUTPUT
+        echo
+
     # Uses --force flag since the CLI currently does not have a pre-release version and is always on the latest released version.
     # However, many of our pipelines work on prerelease images. Thus the used images are newer than the CLI's version.
     # This makes the version validation in the CLI fail.
+    # Conditionally set the flag. Only if the constellation version is at least v2.6.0-pre.
     - name: Constellation create
       shell: bash
       run: |
         echo "Creating cluster using config:"
         cat constellation-conf.yaml
         sudo sh -c 'echo "127.0.0.1 license.confidential.cloud" >> /etc/hosts' || true
-        constellation create -c ${{ inputs.controlNodesCount }} -w ${{ inputs.workerNodesCount }} -y --force --debug
+
+        constellation create -c ${{ inputs.controlNodesCount }} -w ${{ inputs.workerNodesCount }} -y --debug ${steps.supports-force.outputs.FORCE_FLAG}
 
     - name: Cdbg deploy
       if: inputs.isDebugImage == 'true'
@@ -182,15 +195,14 @@ runs:
           --info logcollect.github.run-attempt="${{ github.run_attempt }}" \
           --info logcollect.github.ref-name="${{ github.ref_name }}" \
           --info logcollect.github.sha="${{ github.sha }}" \
-          --info logcollect.github.runner-os="${{ runner.os }}" \
-          --force
+          --info logcollect.github.runner-os="${{ runner.os }}" ${steps.supports-force.outputs.FORCE_FLAG}
         echo "::endgroup::"
 
     - name: Constellation init
       id: constellation-init
       shell: bash
       run: |
-        constellation init --force --debug
+        constellation init --debug ${steps.supports-force.outputs.FORCE_FLAG}
         echo "KUBECONFIG=$(pwd)/constellation-admin.conf" >> $GITHUB_OUTPUT
         echo "MASTERSECRET=$(pwd)/constellation-mastersecret.json" >> $GITHUB_OUTPUT
 
