@@ -176,7 +176,7 @@ runs:
         cat constellation-conf.yaml
         sudo sh -c 'echo "127.0.0.1 license.confidential.cloud" >> /etc/hosts' || true
 
-        constellation create -c ${{ inputs.controlNodesCount }} -w ${{ inputs.workerNodesCount }} -y --debug ${steps.supports-force.outputs.FORCE_FLAG}
+        constellation create -c ${{ inputs.controlNodesCount }} -w ${{ inputs.workerNodesCount }} -y --debug ${{ steps.supports-force.outputs.FORCE_FLAG }}
 
     - name: Cdbg deploy
       if: inputs.isDebugImage == 'true'
@@ -194,14 +194,14 @@ runs:
           --info logcollect.github.run-attempt="${{ github.run_attempt }}" \
           --info logcollect.github.ref-name="${{ github.ref_name }}" \
           --info logcollect.github.sha="${{ github.sha }}" \
-          --info logcollect.github.runner-os="${{ runner.os }}" ${steps.supports-force.outputs.FORCE_FLAG}
+          --info logcollect.github.runner-os="${{ runner.os }}" ${{ steps.supports-force.outputs.FORCE_FLAG }}
         echo "::endgroup::"
 
     - name: Constellation init
       id: constellation-init
       shell: bash
       run: |
-        constellation init --debug ${steps.supports-force.outputs.FORCE_FLAG}
+        constellation init --debug ${{ steps.supports-force.outputs.FORCE_FLAG }}
         echo "KUBECONFIG=$(pwd)/constellation-admin.conf" >> $GITHUB_OUTPUT
         echo "MASTERSECRET=$(pwd)/constellation-mastersecret.json" >> $GITHUB_OUTPUT
 
