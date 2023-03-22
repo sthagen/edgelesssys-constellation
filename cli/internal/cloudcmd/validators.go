@@ -39,7 +39,7 @@ func UpdateInitMeasurements(config config.AttestationCfg, ownerID, clusterID str
 	case variant.QEMUTDX{}:
 		return updateMeasurementTDX(m, uint32(measurements.TDXIndexClusterID), clusterID)
 	default:
-		return fmt.Errorf("UpdateInitMeasurements: unknown attestation variant")
+		return fmt.Errorf("selecting attestation variant: unknown attestation variant")
 	}
 }
 
