@@ -6,10 +6,7 @@ name: e2e test release
 # - any tests on the last release
 # - loadbalancer tests for AWS. Test test is currently broken and should not block a release. AB#2780.
 #
-# The workflow is triggered by the completion of the release workflow.
-# The workflow only executes, after being triggered, if the triggering workflow completed successfully.
-# e2e-test-release uses the same branch as the triggering workflow and not the commit of the triggering workflow. This is because the release workflow produces further commits.
-# e2e-test-release depends on the fact that actions/constellation_create does not overwrite the default osImage, if no osImage is supplied.
+# The workflow is triggered as the last step of the release workflow.
 
 on:
   workflow_dispatch:
