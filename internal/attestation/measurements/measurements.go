@@ -336,9 +336,9 @@ func WithAllBytes(b byte, validationOpt MeasurementValidationOption, len int) Me
 }
 
 // PlaceHolderMeasurement returns a measurement with placeholder values for Expected.
-func PlaceHolderMeasurement() Measurement {
+func PlaceHolderMeasurement(len int) Measurement {
 	return Measurement{
-		Expected:      bytes.Repeat([]byte{0x12, 0x34}, 16),
+		Expected:      bytes.Repeat([]byte{0x12, 0x34}, len/2),
 		ValidationOpt: Enforce,
 	}
 }

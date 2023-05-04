@@ -25,6 +25,7 @@ var (
 	AzureTrustedLaunchDoc      encoder.Doc
 	GCPSEVESDoc                encoder.Doc
 	QEMUVTPMDoc                encoder.Doc
+	QEMUTDXDoc                 encoder.Doc
 )
 
 func init() {
@@ -585,6 +586,16 @@ func init() {
 	QEMUVTPMDoc.Fields[0].Note = ""
 	QEMUVTPMDoc.Fields[0].Description = "Expected TPM measurements."
 	QEMUVTPMDoc.Fields[0].Comments[encoder.LineComment] = "Expected TPM measurements."
+
+	QEMUTDXDoc.Type = "QEMUTDX"
+	QEMUTDXDoc.Comments[encoder.LineComment] = "QEMUTDX is the configuration for QEMU TDX attestation."
+	QEMUTDXDoc.Description = "QEMUTDX is the configuration for QEMU TDX attestation."
+	QEMUTDXDoc.Fields = make([]encoder.Doc, 1)
+	QEMUTDXDoc.Fields[0].Name = "measurements"
+	QEMUTDXDoc.Fields[0].Type = "M"
+	QEMUTDXDoc.Fields[0].Note = ""
+	QEMUTDXDoc.Fields[0].Description = "Expected TDX measurements."
+	QEMUTDXDoc.Fields[0].Comments[encoder.LineComment] = "Expected TDX measurements."
 }
 
 func (_ Config) Doc() *encoder.Doc {
@@ -643,6 +654,10 @@ func (_ QEMUVTPM) Doc() *encoder.Doc {
 	return &QEMUVTPMDoc
 }
 
+func (_ QEMUTDX) Doc() *encoder.Doc {
+	return &QEMUTDXDoc
+}
+
 // GetConfigurationDoc returns documentation for the file ./config_doc.go.
 func GetConfigurationDoc() *encoder.FileDoc {
 	return &encoder.FileDoc{
@@ -663,6 +678,7 @@ func GetConfigurationDoc() *encoder.FileDoc {
 			&AzureTrustedLaunchDoc,
 			&GCPSEVESDoc,
 			&QEMUVTPMDoc,
+			&QEMUTDXDoc,
 		},
 	}
 }

@@ -17,49 +17,59 @@ func DefaultsFor(attestationVariant variant.Variant) M {
 	switch attestationVariant {
 	case variant.AWSNitroTPM{}:
 		return M{
-			4:                         PlaceHolderMeasurement(),
+			4:                         PlaceHolderMeasurement(PCRMeasurementLength),
 			8:                         WithAllBytes(0x00, Enforce, PCRMeasurementLength),
-			9:                         PlaceHolderMeasurement(),
+			9:                         PlaceHolderMeasurement(PCRMeasurementLength),
 			11:                        WithAllBytes(0x00, Enforce, PCRMeasurementLength),
-			12:                        PlaceHolderMeasurement(),
+			12:                        PlaceHolderMeasurement(PCRMeasurementLength),
 			13:                        WithAllBytes(0x00, Enforce, PCRMeasurementLength),
 			uint32(PCRIndexClusterID): WithAllBytes(0x00, Enforce, PCRMeasurementLength),
 		}
 	case variant.AzureSEVSNP{}:
 		return M{
-			4:                         PlaceHolderMeasurement(),
+			4:                         PlaceHolderMeasurement(PCRMeasurementLength),
 			8:                         WithAllBytes(0x00, Enforce, PCRMeasurementLength),
-			9:                         PlaceHolderMeasurement(),
+			9:                         PlaceHolderMeasurement(PCRMeasurementLength),
 			11:                        WithAllBytes(0x00, Enforce, PCRMeasurementLength),
-			12:                        PlaceHolderMeasurement(),
+			12:                        PlaceHolderMeasurement(PCRMeasurementLength),
+			13:                        WithAllBytes(0x00, Enforce, PCRMeasurementLength),
+			uint32(PCRIndexClusterID): WithAllBytes(0x00, Enforce, PCRMeasurementLength),
+		}
+	case variant.AzureTrustedLaunch{}:
+		return M{
+			4:                         PlaceHolderMeasurement(PCRMeasurementLength),
+			8:                         WithAllBytes(0x00, Enforce, PCRMeasurementLength),
+			9:                         PlaceHolderMeasurement(PCRMeasurementLength),
+			11:                        WithAllBytes(0x00, Enforce, PCRMeasurementLength),
+			12:                        PlaceHolderMeasurement(PCRMeasurementLength),
 			13:                        WithAllBytes(0x00, Enforce, PCRMeasurementLength),
 			uint32(PCRIndexClusterID): WithAllBytes(0x00, Enforce, PCRMeasurementLength),
 		}
 	case variant.GCPSEVES{}:
 		return M{
-			4:                         PlaceHolderMeasurement(),
+			4:                         PlaceHolderMeasurement(PCRMeasurementLength),
 			8:                         WithAllBytes(0x00, Enforce, PCRMeasurementLength),
-			9:                         PlaceHolderMeasurement(),
+			9:                         PlaceHolderMeasurement(PCRMeasurementLength),
 			11:                        WithAllBytes(0x00, Enforce, PCRMeasurementLength),
-			12:                        PlaceHolderMeasurement(),
+			12:                        PlaceHolderMeasurement(PCRMeasurementLength),
 			13:                        WithAllBytes(0x00, Enforce, PCRMeasurementLength),
 			uint32(PCRIndexClusterID): WithAllBytes(0x00, Enforce, PCRMeasurementLength),
 		}
 	case variant.QEMUTDX{}:
 		return M{
-			0: PlaceHolderMeasurement(),
-			1: PlaceHolderMeasurement(),
-			2: PlaceHolderMeasurement(),
-			3: PlaceHolderMeasurement(),
-			4: PlaceHolderMeasurement(),
+			0:                         PlaceHolderMeasurement(TDXMeasurementLength),
+			1:                         PlaceHolderMeasurement(TDXMeasurementLength),
+			2:                         PlaceHolderMeasurement(TDXMeasurementLength),
+			uint32(TDXIndexClusterID): WithAllBytes(0x00, Enforce, TDXMeasurementLength),
+			4:                         PlaceHolderMeasurement(TDXMeasurementLength),
 		}
 	case variant.QEMUVTPM{}:
 		return M{
-			4:                         PlaceHolderMeasurement(),
+			4:                         PlaceHolderMeasurement(PCRMeasurementLength),
 			8:                         WithAllBytes(0x00, Enforce, PCRMeasurementLength),
-			9:                         PlaceHolderMeasurement(),
+			9:                         PlaceHolderMeasurement(PCRMeasurementLength),
 			11:                        WithAllBytes(0x00, Enforce, PCRMeasurementLength),
-			12:                        PlaceHolderMeasurement(),
+			12:                        PlaceHolderMeasurement(PCRMeasurementLength),
 			13:                        WithAllBytes(0x00, Enforce, PCRMeasurementLength),
 			uint32(PCRIndexClusterID): WithAllBytes(0x00, Enforce, PCRMeasurementLength),
 		}
