@@ -98,7 +98,7 @@ logVerbosityLevel: 2
 secret:
   enabled: true
   create: false
-  filename: cloud.conf
+  filename: cloudprovider.conf
   name: cinder-csi-cloud-config
 
 storageClass:
