@@ -57,7 +57,7 @@ func NewScalingGroupReconciler(scalingGroupUpdater scalingGroupUpdater, client c
 //+kubebuilder:rbac:groups=update.edgeless.systems,resources=nodeversion,verbs=get;list;watch
 //+kubebuilder:rbac:groups=update.edgeless.systems,resources=nodeversion/status,verbs=get
 
-// Reconcile reads the latest node image from the referenced NodeVersion spec and updates the scaling group to match.
+// Reconcile reads the latest state of the ScalingGroup object and updates the ScalingGroup if necessary.
 func (r *ScalingGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logr := log.FromContext(ctx)
 

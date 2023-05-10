@@ -94,7 +94,7 @@ func (u *upgradeApplyCmd) upgradeApply(cmd *cobra.Command, fileHandler file.Hand
 		return fmt.Errorf("upgrading measurements: %w", err)
 	}
 
-	if conf.GetProvider() == cloudprovider.Azure || conf.GetProvider() == cloudprovider.GCP {
+	if conf.GetProvider() == cloudprovider.Azure || conf.GetProvider() == cloudprovider.GCP || conf.GetProvider() == cloudprovider.AWS {
 		err = u.handleServiceUpgrade(cmd, conf, flags)
 		upgradeErr := &compatibility.InvalidUpgradeError{}
 		switch {
