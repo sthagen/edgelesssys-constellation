@@ -9085,16 +9085,16 @@ def go_dependencies():
         build_file_generation = "on",
         build_file_proto_mode = "disable_global",
         importpath = "golang.org/x/tools",
-        sum = "h1:vSDcovVPld282ceKgDimkRSC8kpaH1dgyc9UMzlt84Y=",
-        version = "v0.8.0",
+        sum = "h1:fQlOhMJ24apqitZX8S4hbCbHU1Z9AvyWkN3BYI55Le4=",
+        version = "v0.8.1-0.20230421161920-b9619ee54b47",
     )
     go_repository(
         name = "org_golang_x_vuln",
         build_file_generation = "on",
         build_file_proto_mode = "disable_global",
         importpath = "golang.org/x/vuln",
-        sum = "h1:SJ0lK20LZB3cfTHvYOXH2m7DCIEaFdSlXtICBRv5bYU=",
-        version = "v0.0.0-20230411201117-aaaefcd264f6",
+        sum = "h1:9GRdj6wAIkDrsMevuolY+SXERPjQPp2P1ysYA0jpZe0=",
+        version = "v0.1.0",
     )
 
     go_repository(
