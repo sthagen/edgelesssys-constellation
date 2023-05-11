@@ -30,7 +30,7 @@ jobs:
           beforeDot="${semver%%.*}"
           afterDot="${semver#*.}"
           afterDotEvaluated=$((afterDot))
-          semver="$beforeDot.$afterDotEvaluated"
+          semver="v${beforeDot}.${afterDotEvaluated}.0"
           echo "Semver tag of guest-agent is $semver"
           echo "latest=$semver" | tee -a "$GITHUB_OUTPUT"
 
